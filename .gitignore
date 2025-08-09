@@ -3,3 +3,14 @@
 venv/
 __pycache__
 .env
+*.txt
+*.mp3
+*.wav
+*.m4a
+*.ogg
+*.flac
+*.aac
+*.m4b
+*.m4p
+*.m4v
+*.m4a
