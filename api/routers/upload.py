@@ -3,19 +3,24 @@ from api.models.upload import UploadResponse
 from api.services.upload_service import UploadService
 from api.config import settings
 
-router = APIRouter()
+router = APIRouter(redirect_slashes=False)
 upload_service = UploadService()
 
 @router.post("/", response_model=UploadResponse)
+@router.post("", response_model=UploadResponse)
 async def upload_audio_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     """Upload an audio file for transcription and indexing."""
     
     # Validate file format
     file_extension = file.filename.split('.')[-1].lower()
-    if file_extension not in settings.allowed_audio_formats:
+    if file_extension not in settings.allowed_audio_formats + settings.allowed_video_formats:
         raise HTTPException(
             status_code=400, 
-            detail=f"Unsupported file format. Allowed formats: {', '.join(settings.allowed_audio_formats)}"
+            detail=(
+                "Unsupported file format. Allowed formats: "
+                f"Audio[{', '.join(settings.allowed_audio_formats)}], "
+                f"Video[{', '.join(settings.allowed_video_formats)}]"
+            )
         )
     
     # Validate file size
