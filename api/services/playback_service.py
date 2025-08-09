@@ -122,3 +122,13 @@ class PlaybackService:
         
         # Fallback to mp3 if not found
         return os.path.join(self.storage_path, f"{file_id}.mp3")
+
+    async def get_original_media_path(self, file_id: str) -> str:
+        """Return the path to the stored original media (audio or video)."""
+        # Try audio first
+        for ext in settings.allowed_audio_formats + settings.allowed_video_formats:
+            potential_path = os.path.join(self.storage_path, f"{file_id}.{ext}")
+            if os.path.exists(potential_path):
+                return potential_path
+        # If still not found, raise
+        raise FileNotFoundError("Media file not found")
