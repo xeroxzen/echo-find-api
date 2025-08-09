@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
 from api.models.upload import UploadResponse
 from api.services.upload_service import UploadService
 from api.config import settings
@@ -7,7 +7,7 @@ router = APIRouter()
 upload_service = UploadService()
 
 @router.post("/", response_model=UploadResponse)
-async def upload_audio_file(file: UploadFile = File(...)):
+async def upload_audio_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     """Upload an audio file for transcription and indexing."""
     
     # Validate file format
@@ -26,7 +26,7 @@ async def upload_audio_file(file: UploadFile = File(...)):
         )
     
     try:
-        result = await upload_service.process_upload(file)
+        result = await upload_service.process_upload(file, background_tasks)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
