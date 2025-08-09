@@ -1,17 +1,18 @@
-from fastapi import UploadFile
+from fastapi import UploadFile, BackgroundTasks
 from api.models.upload import UploadResponse, AudioFile
 from api.config import settings
 import uuid
 from datetime import datetime
 import os
 import aiofiles
+from openai import OpenAI
 
 class UploadService:
     def __init__(self):
         self.storage_path = settings.local_storage_path
         os.makedirs(self.storage_path, exist_ok=True)
     
-    async def process_upload(self, file: UploadFile) -> UploadResponse:
+    async def process_upload(self, file: UploadFile, background_tasks: BackgroundTasks | None = None) -> UploadResponse:
         """Process uploaded audio file."""
         try:
             # Generate unique file ID
@@ -35,8 +36,12 @@ class UploadService:
                 transcription_status="pending"
             )
             
-            # TODO: Trigger async transcription job
-            # await self._trigger_transcription(file_id, file_path)
+            # Trigger async transcription job
+            if background_tasks is not None:
+                background_tasks.add_task(self._trigger_transcription, file_id, file_path)
+            else:
+                # Fallback: fire-and-forget (not ideal; prefer BackgroundTasks)
+                await self._trigger_transcription(file_id, file_path)
             
             return UploadResponse(
                 success=True,
@@ -61,10 +66,37 @@ class UploadService:
         }
     
     async def _trigger_transcription(self, file_id: str, file_path: str):
-        """Trigger transcription job (placeholder for async processing)."""
-        # TODO: Implement async job queue (e.g., Celery, RQ)
-        # This would:
-        # 1. Call Whisper API for transcription
-        # 2. Generate embeddings
-        # 3. Index in ElasticSearch and ChromaDB
-        pass
+        """Transcribe audio via Whisper API and store sidecar .txt transcript."""
+        try:
+            if not settings.openai_api_key:
+                # No API key set; skip transcription but create placeholder
+                transcript_path = os.path.join(self.storage_path, f"{file_id}.txt")
+                async with aiofiles.open(transcript_path, "w", encoding="utf-8") as f:
+                    await f.write(
+                        "Transcription skipped: OPENAI_API_KEY not configured."
+                    )
+                return
+
+            client = OpenAI(api_key=settings.openai_api_key)
+
+            # Open file in binary for streaming to API
+            # Note: open synchronously; upload handled by OpenAI client
+            with open(file_path, "rb") as audio_file:
+                transcription = client.audio.transcriptions.create(
+                    model=settings.whisper_model,
+                    file=audio_file,
+                    language=settings.whisper_language,
+                    response_format="text",
+                )
+
+            # Persist transcript to sidecar .txt next to audio
+            transcript_text = transcription if isinstance(transcription, str) else str(transcription)
+            transcript_path = os.path.join(self.storage_path, f"{file_id}.txt")
+            async with aiofiles.open(transcript_path, "w", encoding="utf-8") as f:
+                await f.write(transcript_text)
+
+        except Exception as exc:
+            # Persist error message for visibility in the UI
+            transcript_path = os.path.join(self.storage_path, f"{file_id}.txt")
+            async with aiofiles.open(transcript_path, "w", encoding="utf-8") as f:
+                await f.write(f"Transcription failed: {str(exc)}")
