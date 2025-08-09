@@ -33,6 +33,8 @@ export default function SearchInterface() {
   const [uploadedFileId, setUploadedFileId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string>("");
   const [transcriptQuery, setTranscriptQuery] = useState<string>("");
+  const [uploadedMediaUrl, setUploadedMediaUrl] = useState<string | null>(null);
+  const [uploadedIsVideo, setUploadedIsVideo] = useState<boolean>(false);
 
   const formatSeconds = (seconds: number) => {
     const m = Math.floor(seconds / 60)
@@ -112,7 +114,10 @@ export default function SearchInterface() {
     const form = new FormData();
     form.append("file", file);
     try {
-      const res = await fetch("/api/v1/upload", { method: "POST", body: form });
+      const res = await fetch("/api/v1/upload/", {
+        method: "POST",
+        body: form,
+      });
       if (!res.ok) throw new Error(`Upload failed with ${res.status}`);
       const data: {
         success: boolean;
@@ -121,6 +126,11 @@ export default function SearchInterface() {
       } = await res.json();
       const fid = data.file_id || data.audio_file?.id || null;
       setUploadedFileId(fid);
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      const videoExts = ["mp4", "webm", "ogg"];
+      const isVid = videoExts.includes(ext);
+      setUploadedIsVideo(isVid);
+      setUploadedMediaUrl(fid ? `/api/v1/playback/${fid}/file` : null);
 
       if (fid) {
         // Try to fetch transcript for this uploaded file
@@ -188,7 +198,7 @@ export default function SearchInterface() {
             <input
               id="audio-upload"
               type="file"
-              accept="audio/*"
+              accept="audio/*,video/*"
               onChange={handleUpload}
               aria-label="Upload audio"
               title="Upload audio"
@@ -402,6 +412,20 @@ export default function SearchInterface() {
               </p>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Media Preview/Playback for videos */}
+      {uploadedMediaUrl && uploadedIsVideo && (
+        <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+            Preview
+          </h3>
+          <video
+            src={uploadedMediaUrl}
+            controls
+            className="w-full rounded-lg"
+          />
         </div>
       )}
     </div>
