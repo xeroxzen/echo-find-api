@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # File upload settings
     max_file_size: int = 100 * 1024 * 1024  # 100MB
     allowed_audio_formats: list[str] = ["mp3", "wav", "m4a", "ogg", "flac"]
+    allowed_video_formats: list[str] = ["mp4", "webm", "ogg"]
     
     class Config:
         env_file = ".env"
