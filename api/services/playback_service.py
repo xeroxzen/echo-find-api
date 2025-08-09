@@ -1,7 +1,7 @@
 from api.models.playback import PlaybackRequest, PlaybackResponse
 from api.config import settings
 import os
-from typing import Generator
+from typing import AsyncGenerator, Optional
 
 class PlaybackService:
     def __init__(self):
@@ -40,7 +40,12 @@ class PlaybackService:
                 message=f"Error retrieving playback info: {str(e)}"
             )
     
-    async def stream_audio(self, file_id: str, start_time: float = None, end_time: float = None) -> Generator[bytes, None, None]:
+    async def stream_audio(
+        self,
+        file_id: str,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+    ) -> AsyncGenerator[bytes, None]:
         """Stream audio file or segment."""
         file_path = self._get_file_path(file_id)
         
@@ -80,6 +85,32 @@ class PlaybackService:
         except Exception as e:
             raise Exception(f"Error getting audio info: {str(e)}")
     
+    async def get_transcript(self, file_id: str) -> dict:
+        """Return transcript text for a given file.
+
+        I return a simple placeholder if no sidecar transcript file is found.
+        If a sidecar file named `{file_id}.txt` exists alongside the audio in
+        the storage path, I will return its contents as the transcript.
+        """
+        try:
+            # Try to find a sidecar transcript file
+            transcript_path = os.path.join(self.storage_path, f"{file_id}.txt")
+            if os.path.exists(transcript_path):
+                with open(transcript_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                return {"file_id": file_id, "transcript": content}
+
+            # Fallback placeholder text until transcription pipeline is wired
+            placeholder = (
+                "This is a placeholder transcript. The transcription pipeline "
+                "is not yet connected. Once processing completes, this will "
+                "display the full text of the audio."
+            )
+            return {"file_id": file_id, "transcript": placeholder}
+
+        except Exception as exc:
+            raise Exception(f"Error getting transcript: {str(exc)}")
+
     def _get_file_path(self, file_id: str) -> str:
         """Get the file path for a given file ID."""
         # TODO: This should query the database to get the actual filename
