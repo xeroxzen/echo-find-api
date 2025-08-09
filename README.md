@@ -1,3 +1,4 @@
+```bash
 echofind/
 │
 ├── client/                  # Next.js Web UI
@@ -36,3 +37,4 @@ echofind/
 ├── .env.example             # Environment variable template
 ├── README.md                # Project intro + setup guide
 └── pyproject.toml           # Python project settings (shared dependencies)
+```
