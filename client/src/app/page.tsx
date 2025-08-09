@@ -20,6 +20,7 @@ export default function Home() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadedFileId, setUploadedFileId] = useState<string | null>(null);
+  const [transcriptText, setTranscriptText] = useState<string>("");
   const [topSearchQuery, setTopSearchQuery] = useState("");
   const router = useRouter();
 
@@ -31,12 +32,14 @@ export default function Home() {
     setUploadProgress(0);
     setUploadError(null);
     setUploadedFileId(null);
+    setTranscriptText("");
 
     const formData = new FormData();
     formData.append("file", file);
 
+    // Prefer Next.js local API for transcription and progress feedback, to avoid proxy redirect issues
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/v1/upload");
+    xhr.open("POST", "/api/transcribe");
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         const percent = Math.round((event.loaded / event.total) * 100);
@@ -48,20 +51,27 @@ export default function Home() {
         setIsUploading(false);
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
-            const json = JSON.parse(xhr.responseText);
-            const fid = json.file_id || json.audio_file?.id || null;
-            setUploadedFileId(fid);
+            const data = JSON.parse(xhr.responseText);
+            setUploadedFileId("local");
+            // Nothing to store on backend in this codepath, but we have the audio URL to play on the client
+            // Client already created a blob URL for playback via the landing page
+            const text =
+              (typeof data?.text === "string" && data.text) ||
+              (Array.isArray(data?.segments)
+                ? data.segments.map((s: any) => s?.text || "").join(" ")
+                : "");
+            setTranscriptText(text);
           } catch (err) {
             setUploadError("Upload succeeded but parsing response failed.");
           }
         } else {
-          setUploadError(`Upload failed (${xhr.status}).`);
+          setUploadError(`Transcription failed (${xhr.status}).`);
         }
       }
     };
     xhr.onerror = () => {
       setIsUploading(false);
-      setUploadError("Network error during upload.");
+      setUploadError("Network error during transcription.");
     };
     xhr.send(formData);
   };
@@ -198,6 +208,20 @@ export default function Home() {
                 )}
               </div>
             </div>
+
+            {/* Transcript Section */}
+            {transcriptText && (
+              <div className="max-w-3xl mx-auto mb-12">
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+                    Transcript
+                  </h3>
+                  <div className="max-h-80 overflow-y-auto whitespace-pre-wrap text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-900 rounded-md p-4">
+                    {transcriptText}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Quick Search CTA */}
             <div className="max-w-xl mx-auto">
