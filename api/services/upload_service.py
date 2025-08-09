@@ -37,11 +37,14 @@ class UploadService:
             )
             
             # Trigger async transcription job
-            if background_tasks is not None:
-                background_tasks.add_task(self._trigger_transcription, file_id, file_path)
-            else:
-                # Fallback: fire-and-forget (not ideal; prefer BackgroundTasks)
-                await self._trigger_transcription(file_id, file_path)
+            # Only attempt transcription for audio formats; skip for videos
+            is_audio = file_extension in settings.allowed_audio_formats
+            if is_audio:
+                if background_tasks is not None:
+                    background_tasks.add_task(self._trigger_transcription, file_id, file_path)
+                else:
+                    # Fallback: fire-and-forget (not ideal; prefer BackgroundTasks)
+                    await self._trigger_transcription(file_id, file_path)
             
             return UploadResponse(
                 success=True,
