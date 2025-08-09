@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   MicrophoneIcon,
@@ -17,25 +18,60 @@ import { SpeakerWaveIcon as SpeakerWaveSolid } from "@heroicons/react/24/solid";
 export default function Home() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadedFileId, setUploadedFileId] = useState<string | null>(null);
+  const [topSearchQuery, setTopSearchQuery] = useState("");
+  const router = useRouter();
 
-  // I'm simulating upload progress for demo purposes
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      setIsUploading(true);
-      setUploadProgress(0);
+    if (!file) return;
 
-      // Simulate upload progress
-      const interval = setInterval(() => {
-        setUploadProgress((prev) => {
-          if (prev >= 100) {
-            clearInterval(interval);
-            setIsUploading(false);
-            return 100;
+    setIsUploading(true);
+    setUploadProgress(0);
+    setUploadError(null);
+    setUploadedFileId(null);
+
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/v1/upload");
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        const percent = Math.round((event.loaded / event.total) * 100);
+        setUploadProgress(percent);
+      }
+    };
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.DONE) {
+        setIsUploading(false);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const json = JSON.parse(xhr.responseText);
+            const fid = json.file_id || json.audio_file?.id || null;
+            setUploadedFileId(fid);
+          } catch (err) {
+            setUploadError("Upload succeeded but parsing response failed.");
           }
-          return prev + 10;
-        });
-      }, 200);
+        } else {
+          setUploadError(`Upload failed (${xhr.status}).`);
+        }
+      }
+    };
+    xhr.onerror = () => {
+      setIsUploading(false);
+      setUploadError("Network error during upload.");
+    };
+    xhr.send(formData);
+  };
+
+  const goToDashboardWithQuery = () => {
+    const q = topSearchQuery.trim();
+    if (q) {
+      router.push(`/dashboard?q=${encodeURIComponent(q)}`);
+    } else {
+      router.push("/dashboard");
     }
   };
 
@@ -101,6 +137,11 @@ export default function Home() {
                   <CloudArrowUpIcon className="w-12 h-12 text-blue-600 mx-auto mb-4" />
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
                     Upload Your Voice Notes
+                    {uploadedFileId && (
+                      <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
+                        (ID: {uploadedFileId})
+                      </span>
+                    )}
                   </h3>
                   <p className="text-gray-600 dark:text-gray-400">
                     Drag and drop or click to upload audio files
@@ -120,7 +161,7 @@ export default function Home() {
                     <MicrophoneIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <p className="text-gray-600 dark:text-gray-400 mb-2">
                       {isUploading
-                        ? "Processing..."
+                        ? "Uploading..."
                         : "Click to upload or drag and drop"}
                     </p>
                     <p className="text-sm text-gray-500 dark:text-gray-500">
@@ -129,11 +170,11 @@ export default function Home() {
                   </label>
                 </div>
 
-                {isUploading && (
+                {(isUploading || uploadProgress > 0) && (
                   <div className="mt-6">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-sm text-gray-600 dark:text-gray-400">
-                        Processing...
+                        {isUploading ? "Uploading..." : "Uploaded"}
                       </span>
                       <span className="text-sm text-gray-600 dark:text-gray-400">
                         {uploadProgress}%
@@ -145,8 +186,41 @@ export default function Home() {
                         style={{ width: `${uploadProgress}%` }}
                       />
                     </div>
+                    {uploadError && (
+                      <p className="mt-2 text-sm text-red-600">{uploadError}</p>
+                    )}
+                    {uploadedFileId && !uploadError && !isUploading && (
+                      <div className="mt-3 text-sm text-green-700">
+                        Uploaded file ID: <code>{uploadedFileId}</code>
+                      </div>
+                    )}
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Quick Search CTA */}
+            <div className="max-w-xl mx-auto">
+              <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <MagnifyingGlassIcon className="w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search immediately (opens dashboard)..."
+                    value={topSearchQuery}
+                    onChange={(e) => setTopSearchQuery(e.target.value)}
+                    onKeyDown={(e) =>
+                      e.key === "Enter" && goToDashboardWithQuery()
+                    }
+                    className="flex-1 px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  />
+                  <button
+                    onClick={goToDashboardWithQuery}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
+                  >
+                    Search
+                  </button>
+                </div>
               </div>
             </div>
           </motion.div>
