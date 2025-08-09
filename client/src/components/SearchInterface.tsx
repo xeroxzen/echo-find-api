@@ -30,61 +30,129 @@ export default function SearchInterface() {
   const [sortBy, setSortBy] = useState("relevance");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
+  const [uploadedFileId, setUploadedFileId] = useState<string | null>(null);
+  const [transcript, setTranscript] = useState<string>("");
+  const [transcriptQuery, setTranscriptQuery] = useState<string>("");
 
-  // I'm simulating search results for demo purposes
-  const mockResults: SearchResult[] = [
-    {
-      id: "1",
-      title: "Team Meeting - Q4 Planning",
-      timestamp: "2:34",
-      duration: "45:23",
-      transcript:
-        "So for the Q4 planning, we need to focus on three main areas: product development, marketing strategy, and customer retention. The product team has been working on the new features that we discussed last week...",
-      confidence: 0.95,
-      audioUrl: "/audio/meeting-1.mp3",
-    },
-    {
-      id: "2",
-      title: "Customer Call - Support Issue",
-      timestamp: "1:15",
-      duration: "12:45",
-      transcript:
-        "I understand your frustration with the login issue. Let me help you troubleshoot this step by step. First, can you try clearing your browser cache and cookies?",
-      confidence: 0.92,
-      audioUrl: "/audio/call-1.mp3",
-    },
-    {
-      id: "3",
-      title: "WhatsApp Voice Note - Project Update",
-      timestamp: "0:45",
-      duration: "3:22",
-      transcript:
-        "Hey team, just wanted to give you a quick update on the project. We're ahead of schedule and should be able to deliver the beta version by next Friday.",
-      confidence: 0.88,
-      audioUrl: "/audio/whatsapp-1.mp3",
-    },
-  ];
+  const formatSeconds = (seconds: number) => {
+    const m = Math.floor(seconds / 60)
+      .toString()
+      .padStart(1, "0");
+    const s = Math.floor(seconds % 60)
+      .toString()
+      .padStart(2, "0");
+    return `${m}:${s}`;
+  };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
 
     setIsSearching(true);
+    try {
+      const params = new URLSearchParams({
+        query: searchQuery,
+        limit: "20",
+        offset: "0",
+      });
+      const res = await fetch(`/api/v1/search?${params.toString()}`);
+      if (!res.ok) throw new Error(`Search failed with ${res.status}`);
+      const data: {
+        success: boolean;
+        results: Array<{
+          file_id: string;
+          filename: string;
+          transcript_segment: string;
+          start_time: number;
+          end_time: number;
+          confidence_score: number;
+          upload_time: string;
+        }>;
+        total_count: number;
+        query: string;
+        took_ms: number;
+      } = await res.json();
 
-    // I'm simulating API call delay
-    setTimeout(() => {
-      const filteredResults = mockResults.filter(
-        (result) =>
-          result.transcript.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          result.title.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setResults(filteredResults);
+      const mapped: SearchResult[] = (data.results || []).map((r) => {
+        const durationSeconds = Math.max(
+          0,
+          (r.end_time ?? 0) - (r.start_time ?? 0)
+        );
+        return {
+          id: r.file_id,
+          title: r.filename || r.file_id,
+          timestamp: formatSeconds(r.start_time ?? 0),
+          duration: formatSeconds(durationSeconds || 0),
+          transcript: r.transcript_segment,
+          confidence: r.confidence_score ?? 0,
+          audioUrl: `/api/v1/playback/${r.file_id}`,
+        };
+      });
+
+      setResults(mapped);
+    } catch (err) {
+      console.error(err);
+      setResults([]);
+    } finally {
       setIsSearching(false);
-    }, 1000);
+    }
   };
 
   const handlePlayAudio = (audioId: string) => {
-    setPlayingAudio(playingAudio === audioId ? null : audioId);
-    // I'm simulating audio playback - in real implementation, this would control actual audio
+    const next = playingAudio === audioId ? null : audioId;
+    setPlayingAudio(next);
+    const selected = results.find((r) => r.id === audioId);
+    if (next && selected) {
+      window.open(selected.audioUrl, "_blank");
+    }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const res = await fetch("/api/v1/upload", { method: "POST", body: form });
+      if (!res.ok) throw new Error(`Upload failed with ${res.status}`);
+      const data: {
+        success: boolean;
+        file_id?: string;
+        audio_file?: { id: string };
+      } = await res.json();
+      const fid = data.file_id || data.audio_file?.id || null;
+      setUploadedFileId(fid);
+
+      if (fid) {
+        // Try to fetch transcript for this uploaded file
+        const tr = await fetch(`/api/v1/playback/${fid}/transcript`);
+        if (tr.ok) {
+          const tjson = (await tr.json()) as { transcript?: string };
+          setTranscript(tjson.transcript || "");
+        } else {
+          setTranscript("");
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const renderHighlightedTranscript = (text: string, query: string) => {
+    if (!query) return text;
+    const pattern = new RegExp(
+      `(${query.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")})`,
+      "gi"
+    );
+    const parts = text.split(pattern);
+    return parts.map((part, i) =>
+      pattern.test(part) ? (
+        <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 px-1 rounded">
+          {part}
+        </mark>
+      ) : (
+        <span key={i}>{part}</span>
+      )
+    );
   };
 
   const highlightText = (text: string, query: string) => {
@@ -109,9 +177,25 @@ export default function SearchInterface() {
 
   return (
     <div className="max-w-6xl mx-auto p-6">
-      {/* Search Header */}
+      {/* Upload + Search Header */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 mb-6">
         <div className="flex flex-col lg:flex-row gap-4">
+          {/* Upload Input */}
+          <div className="flex items-center">
+            <label htmlFor="audio-upload" className="sr-only">
+              Upload audio
+            </label>
+            <input
+              id="audio-upload"
+              type="file"
+              accept="audio/*"
+              onChange={handleUpload}
+              aria-label="Upload audio"
+              title="Upload audio"
+              className="text-sm text-gray-600 dark:text-gray-300"
+            />
+          </div>
+
           {/* Search Input */}
           <div className="flex-1 relative">
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -288,6 +372,37 @@ export default function SearchInterface() {
             files
           </p>
         </motion.div>
+      )}
+
+      {/* Transcription Section */}
+      {uploadedFileId && (
+        <div className="mt-8 bg-white dark:bg-gray-800 rounded-xl shadow-lg p-6 border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+              Transcript
+            </h3>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Highlight in transcript..."
+                value={transcriptQuery}
+                onChange={(e) => setTranscriptQuery(e.target.value)}
+                className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            </div>
+          </div>
+
+          <div className="prose dark:prose-invert max-w-none whitespace-pre-wrap leading-relaxed text-gray-900 dark:text-gray-100">
+            {transcript ? (
+              renderHighlightedTranscript(transcript, transcriptQuery)
+            ) : (
+              <p className="text-gray-600 dark:text-gray-400">
+                No transcript available yet.
+              </p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
