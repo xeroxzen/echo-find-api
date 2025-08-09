@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     
     # Whisper API settings
     openai_api_key: Optional[str] = None
-    whisper_model: str = "whisper-1"
+    whisper_model: str = "whisper-1"  # OpenAI Whisper via API
+    whisper_language: Optional[str] = None  # e.g., "en" to bias language
     
     # API settings
     api_host: str = "0.0.0.0"
