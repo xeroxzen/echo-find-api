@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
 from api.models.playback import PlaybackRequest, PlaybackResponse
 from api.services.playback_service import PlaybackService
 
@@ -27,6 +27,16 @@ async def stream_audio(file_id: str, start_time: float = None, end_time: float =
         )
     except Exception as e:
         raise HTTPException(status_code=404, detail="Audio file not found")
+
+@router.get("/{file_id}/file")
+async def download_file(file_id: str):
+    """Return the original media file (audio or video)."""
+    try:
+        file_path = await playback_service.get_original_media_path(file_id)
+        # pick a basic media type; the client can rely on the file extension
+        return FileResponse(path=file_path, filename=file_path.split("/")[-1])
+    except Exception:
+        raise HTTPException(status_code=404, detail="File not found")
 
 @router.get("/{file_id}/info")
 async def get_audio_info(file_id: str):
