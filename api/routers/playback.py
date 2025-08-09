@@ -36,3 +36,12 @@ async def get_audio_info(file_id: str):
         return info
     except Exception as e:
         raise HTTPException(status_code=404, detail="Audio file not found")
+
+@router.get("/{file_id}/transcript")
+async def get_transcript(file_id: str):
+    """Get transcript for an audio file."""
+    try:
+        transcript = await playback_service.get_transcript(file_id)
+        return transcript
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="Transcript not found")
