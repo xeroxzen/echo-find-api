@@ -1,30 +1,30 @@
 from api.config import settings
+from api.services.database_service import DatabaseService
 import os
 from datetime import datetime
 
 class AdminService:
     def __init__(self):
         self.storage_path = settings.local_storage_path
+        self.db_service = DatabaseService()
     
     async def list_all_files(self) -> list:
         """List all uploaded files with their metadata."""
         try:
-            # TODO: Query database for file metadata
-            # For now, just list files in storage directory
+            # Query database for file metadata
+            db_files = await self.db_service.get_all_files()
             files = []
             
-            if os.path.exists(self.storage_path):
-                for filename in os.listdir(self.storage_path):
-                    file_path = os.path.join(self.storage_path, filename)
-                    if os.path.isfile(file_path):
-                        stat = os.stat(file_path)
-                        files.append({
-                            "file_id": filename.split('.')[0],
-                            "filename": filename,
-                            "file_size": stat.st_size,
-                            "upload_time": datetime.fromtimestamp(stat.st_ctime),
-                            "last_modified": datetime.fromtimestamp(stat.st_mtime)
-                        })
+            for db_file in db_files:
+                files.append({
+                    "file_id": db_file.id,
+                    "filename": db_file.filename,
+                    "file_size": db_file.file_size,
+                    "duration": db_file.duration,
+                    "format": db_file.format,
+                    "upload_time": db_file.upload_time,
+                    "transcription_status": db_file.transcription_status
+                })
             
             return files
             
@@ -34,18 +34,24 @@ class AdminService:
     async def delete_file(self, file_id: str) -> dict:
         """Delete a file and all associated data."""
         try:
-            # TODO: Delete from database, search index, and vector DB
+            # Delete from database first
+            db_success = await self.db_service.delete_file(file_id)
             
             # Delete physical file
             deleted = False
-            for ext in settings.allowed_audio_formats:
+            for ext in settings.allowed_audio_formats + settings.allowed_video_formats:
                 file_path = os.path.join(self.storage_path, f"{file_id}.{ext}")
                 if os.path.exists(file_path):
                     os.remove(file_path)
                     deleted = True
                     break
             
-            if not deleted:
+            # Also delete transcript file
+            transcript_path = os.path.join(self.storage_path, f"{file_id}.txt")
+            if os.path.exists(transcript_path):
+                os.remove(transcript_path)
+            
+            if not db_success and not deleted:
                 return {"success": False, "message": "File not found"}
             
             return {
