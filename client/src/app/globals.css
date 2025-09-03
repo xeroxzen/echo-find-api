@@ -92,6 +92,10 @@
     animation: wave 2s ease-in-out infinite;
   }
 
+  .progress-bar {
+    @apply bg-gradient-to-r from-blue-600 to-purple-600 h-2 rounded-full transition-all duration-300;
+  }
+
   @keyframes wave {
     0%,
     100% {
