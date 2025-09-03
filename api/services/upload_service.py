@@ -1,6 +1,7 @@
 from fastapi import UploadFile, BackgroundTasks
 from api.models.upload import UploadResponse, AudioFile
 from api.config import settings
+from api.services.database_service import DatabaseService
 import uuid
 from datetime import datetime
 import os
@@ -10,6 +11,7 @@ from openai import OpenAI
 class UploadService:
     def __init__(self):
         self.storage_path = settings.local_storage_path
+        self.db_service = DatabaseService()
         os.makedirs(self.storage_path, exist_ok=True)
     
     async def process_upload(self, file: UploadFile, background_tasks: BackgroundTasks | None = None) -> UploadResponse:
@@ -17,6 +19,11 @@ class UploadService:
         try:
             # Generate unique file ID
             file_id = str(uuid.uuid4())
+            
+            # Handle potential None filename
+            if not file.filename:
+                raise ValueError("File must have a filename")
+                
             file_extension = file.filename.split('.')[-1].lower()
             stored_filename = f"{file_id}.{file_extension}"
             file_path = os.path.join(self.storage_path, stored_filename)
@@ -35,6 +42,9 @@ class UploadService:
                 upload_time=datetime.utcnow(),
                 transcription_status="pending"
             )
+            
+            # Save to database
+            await self.db_service.create_audio_file(audio_file)
             
             # Trigger async transcription job
             # Only attempt transcription for audio formats; skip for videos
@@ -85,12 +95,16 @@ class UploadService:
             # Open file in binary for streaming to API
             # Note: open synchronously; upload handled by OpenAI client
             with open(file_path, "rb") as audio_file:
-                transcription = client.audio.transcriptions.create(
-                    model=settings.whisper_model,
-                    file=audio_file,
-                    language=settings.whisper_language,
-                    response_format="text",
-                )
+                # Handle optional language parameter
+                transcription_kwargs = {
+                    "model": settings.whisper_model,
+                    "file": audio_file,
+                    "response_format": "text",
+                }
+                if settings.whisper_language:
+                    transcription_kwargs["language"] = settings.whisper_language
+                    
+                transcription = client.audio.transcriptions.create(**transcription_kwargs)
 
             # Persist transcript to sidecar .txt next to audio
             transcript_text = transcription if isinstance(transcription, str) else str(transcription)
